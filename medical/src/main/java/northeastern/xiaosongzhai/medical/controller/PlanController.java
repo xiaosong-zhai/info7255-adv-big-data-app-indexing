@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URI;
 import java.util.List;
+import java.util.Objects;
 
 import northeastern.xiaosongzhai.medical.constant.CommonConstants;
 import northeastern.xiaosongzhai.medical.model.Plan;
@@ -36,9 +37,7 @@ public class PlanController {
      * @return response
      */
     @PostMapping
-    public ResponseEntity<Plan> storeModel(@RequestBody
-                                         @Validated
-                                         Plan plan) {
+    public ResponseEntity<Plan> storeModel(@Validated @RequestBody Plan plan) {
         // generate eTag for plan
         String jsonPlan = JsonUtil.toJson(plan);
         String eTagValue = ETagUtil.generateETag(jsonPlan);
@@ -60,8 +59,11 @@ public class PlanController {
      * @return list of use case models
      */
     @GetMapping
-    public ResponseEntity<List<Plan>> getAllModels() {
+    public ResponseEntity< ? > getAllModels() {
         List<Plan> plans = planService.getAllPlans();
+        if (plans.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No plan found");
+        }
         return ResponseEntity.ok().body(plans);
     }
 
@@ -71,32 +73,28 @@ public class PlanController {
      * @return model
      */
     @GetMapping("/{objectId}")
-    public ResponseEntity<Object> getModelById(@RequestHeader HttpHeaders headers,
-                                             @PathVariable String objectId) {
+    public ResponseEntity<Object> getModelById(@RequestHeader HttpHeaders headers, @PathVariable String objectId) {
         // get eTag from client request
         String clientETag = headers.getFirst(CommonConstants.IF_NONE_MATCH);
 
-        // get plan by id
+        // Attempt to fetch the plan by id
         Plan plan = planService.getPlanById(objectId);
+        if (plan == null) {
+            // Early return if plan not found
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("objectId: " + objectId + " not found");
+        }
 
-        // get eTag from redis
+        // Construct eTag key and retrieve the eTag value from a service or cache
         String eTagKey = CommonConstants.ETAG_KEY + ":" + objectId;
         String serverETag = (String) planService.getETagValue(eTagKey);
 
-        if (clientETag == null) {
-            // check if plan is existed
-            if (plan == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("objectId: " + objectId + " not found");
-            }
-            return ResponseEntity.ok().header(CommonConstants.ETAG_KEY, serverETag).body(plan);
+        // Check if eTag matches
+        if (Objects.equals(clientETag, serverETag)) {
+            // If eTags match, return 304 Not Modified without plan data
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).header(HttpHeaders.ETAG, serverETag).build();
         } else {
-            // check if eTag is matched
-            if (clientETag.equals(serverETag)) {
-                return ResponseEntity.status(HttpStatus.NOT_MODIFIED).header(CommonConstants.ETAG_KEY, serverETag).build();
-            } else {
-                return ResponseEntity.status(HttpStatus.OK).header(CommonConstants.ETAG_KEY, serverETag).body(plan);
-            }
+            // If eTags do not match, return the plan with current eTag
+            return ResponseEntity.ok().header(HttpHeaders.ETAG, serverETag).body(plan);
         }
     }
 
