@@ -1,7 +1,5 @@
 package northeastern.xiaosongzhai.medical.controller;
 
-import com.google.gson.Gson;
-import jakarta.servlet.http.HttpServletResponse;
 import java.net.URI;
 import java.util.List;
 import java.util.Objects;
@@ -108,4 +106,36 @@ public class PlanController {
         return ResponseEntity.noContent().build();
     }
 
+
+    /**
+     * patch model by id
+     * @param objectId objectId
+     */
+    @PatchMapping("/{objectId}")
+    public ResponseEntity<Object> patchModelById(@Validated @RequestHeader HttpHeaders headers,@PathVariable String objectId, @RequestBody Plan plan) {
+        // get eTag from client request
+        String clientETag = headers.getFirst(CommonConstants.IF_MATCH);
+
+        // if header is not present, return 428 Precondition Required
+        if (clientETag == null) {
+            return ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED).body("If-Match header is not present");
+        }
+        // check if client eTag matches server eTag
+        String eTagKey = CommonConstants.ETAG_KEY + ":" + objectId;
+        String serverETag = (String) planService.getETagValue(eTagKey);
+        if (!Objects.equals(clientETag, serverETag)) {
+            return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body("If-Match header does not match server eTag");
+        }
+
+        // generate eTag for new plan
+        String jsonPlan = JsonUtil.toJson(plan);
+        String eTagValue = ETagUtil.generateETag(jsonPlan);
+
+        // Attempt to patch the plan by id
+        Plan updatedPlan = planService.patchPlanById(objectId, plan, eTagValue);
+        if (updatedPlan == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("objectId: " + objectId + " not found");
+        }
+        return ResponseEntity.ok().header(HttpHeaders.ETAG, eTagValue).body(updatedPlan);
+    }
 }

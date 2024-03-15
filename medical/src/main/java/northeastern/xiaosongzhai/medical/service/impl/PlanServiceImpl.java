@@ -3,7 +3,6 @@ package northeastern.xiaosongzhai.medical.service.impl;
 import northeastern.xiaosongzhai.medical.constant.CommonConstants;
 import northeastern.xiaosongzhai.medical.model.Plan;
 import northeastern.xiaosongzhai.medical.service.PlanService;
-import northeastern.xiaosongzhai.medical.utils.JsonUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -120,6 +119,29 @@ public class PlanServiceImpl implements PlanService {
         if (Boolean.TRUE.equals(redisTemplate.hasKey(planKey))) {
             redisTemplate.delete(planKey);
             redisTemplate.delete(eTagKey);
+        } else {
+            throw new IllegalArgumentException("objectId: " + objectId + " not found");
+        }
+
+    }
+
+    /**
+     * patch plan by id
+     * @param objectId plan id
+     * @param plan plan
+     * @return plan
+     */
+    @Override
+    public Plan patchPlanById(String objectId, Plan plan, String eTagValue) {
+        String planKey = CommonConstants.PLAN_PREFIX + objectId;
+        String eTagKey = CommonConstants.ETAG_KEY + ":" + objectId;
+
+        // check if plan is existed
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(planKey))) {
+            // update plan and eTag
+            redisTemplate.opsForValue().set(planKey, plan);
+            redisTemplate.opsForValue().set(eTagKey, eTagValue);
+            return plan;
         } else {
             throw new IllegalArgumentException("objectId: " + objectId + " not found");
         }

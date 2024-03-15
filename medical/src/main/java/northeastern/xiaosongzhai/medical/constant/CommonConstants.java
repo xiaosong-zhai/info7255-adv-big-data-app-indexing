@@ -14,4 +14,6 @@ public class CommonConstants {
     public static final String PLAN_PREFIX = "plan:";
 
     public static final String IF_NONE_MATCH = "If-None-Match";
+
+    public static final String IF_MATCH = "If-Match";
 }

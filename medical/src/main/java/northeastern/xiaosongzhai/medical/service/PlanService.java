@@ -20,4 +20,6 @@ public interface PlanService {
     Object getETagValue(String eTagKey);
 
     void deletePlanById(String objectId);
+
+    Plan patchPlanById(String objectId, Plan plan, String eTagValue);
 }

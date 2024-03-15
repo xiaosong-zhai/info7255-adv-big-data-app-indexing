@@ -2,6 +2,20 @@ server:
   port: 8080
 
 spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: <your-client-id>
+            client-secret: <your-client-secret>
+            scope: profile,email,openid
+      resourceserver:
+        jwt:
+          issuer-uri: https://accounts.google.com
+          jwk-set-uri: https://www.googleapis.com/oauth2/v3/certs
+
+
   main:
     allow-circular-references: true
 
