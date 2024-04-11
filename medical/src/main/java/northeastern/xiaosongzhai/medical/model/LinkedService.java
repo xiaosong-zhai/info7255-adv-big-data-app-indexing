@@ -1,5 +1,6 @@
 package northeastern.xiaosongzhai.medical.model;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,6 +23,7 @@ public class LinkedService implements Serializable {
     @Serial
     private static final long serialVersionUID = 4897374593153573406L;
 
+    @Valid
     @NotNull
     private String _org;
     @NotNull

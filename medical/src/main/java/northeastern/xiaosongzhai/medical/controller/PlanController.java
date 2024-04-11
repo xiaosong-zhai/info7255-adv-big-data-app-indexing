@@ -101,7 +101,15 @@ public class PlanController {
      * @param objectId objectId
      */
     @DeleteMapping("/{objectId}")
-    public ResponseEntity<Object> deleteModelById(@PathVariable String objectId) {
+    public ResponseEntity<Object> deleteModelById(@RequestHeader HttpHeaders headers, @PathVariable String objectId) {
+        // get eTag from client request
+        String clientETag = headers.getFirst(CommonConstants.IF_MATCH);
+
+        // if header is not present, return 428 Precondition Required
+        if (clientETag == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("If-Match header is not present");
+        }
+
         planService.deletePlanById(objectId);
         return ResponseEntity.noContent().build();
     }
@@ -112,7 +120,7 @@ public class PlanController {
      * @param objectId objectId
      */
     @PatchMapping("/{objectId}")
-    public ResponseEntity<Object> patchModelById(@Validated @RequestHeader HttpHeaders headers,@PathVariable String objectId, @RequestBody Plan plan) {
+    public ResponseEntity<Object> patchModelById(@RequestHeader HttpHeaders headers,@PathVariable String objectId, @Validated @RequestBody Plan plan) {
         // get eTag from client request
         String clientETag = headers.getFirst(CommonConstants.IF_MATCH);
 
@@ -120,6 +128,7 @@ public class PlanController {
         if (clientETag == null) {
             return ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED).body("If-Match header is not present");
         }
+
         // check if client eTag matches server eTag
         String eTagKey = CommonConstants.ETAG_KEY + ":" + objectId;
         String serverETag = (String) planService.getETagValue(eTagKey);
@@ -127,15 +136,15 @@ public class PlanController {
             return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body("If-Match header does not match server eTag");
         }
 
-        // generate eTag for new plan
-        String jsonPlan = JsonUtil.toJson(plan);
-        String eTagValue = ETagUtil.generateETag(jsonPlan);
-
         // Attempt to patch the plan by id
-        Plan updatedPlan = planService.patchPlanById(objectId, plan, eTagValue);
+        Plan updatedPlan = planService.patchPlanById(objectId, plan);
+
         if (updatedPlan == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("objectId: " + objectId + " not found");
         }
-        return ResponseEntity.ok().header(HttpHeaders.ETAG, eTagValue).body(updatedPlan);
+
+        String afterPatchETag = planService.getETagValue(eTagKey).toString();
+
+        return ResponseEntity.ok().header(HttpHeaders.ETAG, afterPatchETag).body(updatedPlan);
     }
 }

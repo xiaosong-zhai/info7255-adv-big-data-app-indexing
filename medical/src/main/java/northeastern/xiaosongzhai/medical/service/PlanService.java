@@ -21,5 +21,5 @@ public interface PlanService {
 
     void deletePlanById(String objectId);
 
-    Plan patchPlanById(String objectId, Plan plan, String eTagValue);
+    Plan patchPlanById(String objectId, Plan plan);
 }
