@@ -7,8 +7,8 @@ spring:
       client:
         registration:
           google:
-            client-id: <your-client-id>
-            client-secret: <your-client-secret>
+            client-id: <client-id>
+            client-secret: <client-secret>
             scope: profile,email,openid
       resourceserver:
         jwt:
@@ -18,6 +18,12 @@ spring:
 
   main:
     allow-circular-references: true
+
+  rabbitmq:
+    username: zxs
+    password: zxs123123
+    host: 192.168.1.234
+    port: 5672
 
   data:
     redis:

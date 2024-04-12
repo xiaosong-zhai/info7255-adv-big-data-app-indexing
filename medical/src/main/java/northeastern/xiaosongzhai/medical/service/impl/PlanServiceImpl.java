@@ -1,8 +1,10 @@
 package northeastern.xiaosongzhai.medical.service.impl;
 
 import northeastern.xiaosongzhai.medical.constant.CommonConstants;
+import northeastern.xiaosongzhai.medical.exception.CustomException;
 import northeastern.xiaosongzhai.medical.model.LinkedPlanService;
 import northeastern.xiaosongzhai.medical.model.Plan;
+import northeastern.xiaosongzhai.medical.repository.PlanRepository;
 import northeastern.xiaosongzhai.medical.service.PlanService;
 import northeastern.xiaosongzhai.medical.utils.ETagUtil;
 import northeastern.xiaosongzhai.medical.utils.JsonUtil;
@@ -16,6 +18,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
  * @Author: Xiaosong Zhai
@@ -50,12 +54,25 @@ public class PlanServiceImpl implements PlanService {
                 throw new DuplicateKeyException(CommonConstants.DUPLICATE_KET_EXCEPTION);
             } else {
                 // If the ETag does not match, update the plan and ETag in Redis
-                redisTemplate.opsForValue().set(planKey, plan);
-                redisTemplate.opsForValue().set(eTagKey, eTagValue);
+                storeModelToRedis(plan, eTagValue, planKey, eTagKey);
             }
         }
-        redisTemplate.opsForValue().set(planKey, plan);
-        redisTemplate.opsForValue().set(eTagKey, eTagValue);
+        storeModelToRedis(plan, eTagValue, planKey, eTagKey);
+    }
+
+    private void storeModelToRedis(Plan plan, String eTagValue, String planKey, String eTagKey) {
+        try {
+            redisTemplate.opsForValue().set(eTagKey, eTagValue);
+            redisTemplate.opsForValue().set(planKey, plan);
+            redisTemplate.opsForValue().set(planKey + ":" + CommonConstants.PLAN_COST_SHARES, plan.getPlanCostShares());
+            redisTemplate.opsForValue().set(planKey + ":" + CommonConstants.LINKED_PLAN_SERVICES, plan.getLinkedPlanServices());
+            // store linkedPlanServices, linkedService and planServiceCostShares
+            for (int i = 0; i < plan.getLinkedPlanServices().size(); i++) {
+                addNewLPSToRedis(plan, i);
+            }
+        } catch (Exception e) {
+            throw new CustomException(CommonConstants.REDIS_EXCEPTION, e.getMessage());
+        }
     }
 
     /**
@@ -64,21 +81,27 @@ public class PlanServiceImpl implements PlanService {
      */
     @Override
     public List<Plan> getAllPlans() {
-        // get all plans from redis
-        List<Plan> models = new ArrayList<>();
-        ScanOptions scanOptions = ScanOptions.scanOptions().match(CommonConstants.PLAN_PREFIX + "*").build();
+        List<Plan> plans = new ArrayList<>();
+        // Scan all keys with pattern "plan:*"
+        String pattern = "plan:*";
+        ScanOptions scanOptions = ScanOptions.scanOptions().match(pattern).build();
 
-        // scan all keys with prefix "plan:"
         redisTemplate.execute((RedisConnection connection) -> {
             Cursor<byte[]> cursor = connection.scan(scanOptions);
             while (cursor.hasNext()) {
                 String key = new String(cursor.next());
-                models.add((Plan) redisTemplate.opsForValue().get(key));
+                // Check if the key is a plan key
+                if (!key.substring(key.indexOf(":") + 1).contains(":")) {
+                    Plan plan = (Plan) redisTemplate.opsForValue().get(key);
+                    if (plan != null) {
+                        plans.add(plan);
+                    }
+                }
             }
             return null;
-        });
+        }, true); // Use connection in pipeline mode for better performance
 
-        return models;
+        return plans;
     }
 
     /**
@@ -117,15 +140,31 @@ public class PlanServiceImpl implements PlanService {
     public void deletePlanById(String objectId) {
         String planKey = CommonConstants.PLAN_PREFIX + objectId;
         String eTagKey = CommonConstants.ETAG_KEY + ":" + objectId;
+        String planCostSharesKey = planKey + ":" + CommonConstants.PLAN_COST_SHARES;
+        String linkedPlanServicesKey = planKey + ":" + CommonConstants.LINKED_PLAN_SERVICES;
 
         // check if plan is existed
         if (Boolean.TRUE.equals(redisTemplate.hasKey(planKey))) {
-            redisTemplate.delete(planKey);
             redisTemplate.delete(eTagKey);
+
+            // delete linkedPlanServices, linkedService and planServiceCostShares
+            Plan plan = (Plan) redisTemplate.opsForValue().get(planKey);
+            for (int i = 0; i < Objects.requireNonNull(plan).getLinkedPlanServices().size(); i++) {
+                String linkedPlanServiceKey = plan.getLinkedPlanServices().get(i).getObjectType() + ":" + plan.getLinkedPlanServices().get(i).getObjectId();
+                String linkedServiceKey = plan.getLinkedPlanServices().get(i).getLinkedService().getObjectType() + ":" + plan.getLinkedPlanServices().get(i).getLinkedService().getObjectId();
+                String planServiceCostSharesKey = plan.getLinkedPlanServices().get(i).getPlanserviceCostShares().getObjectType() + ":" + plan.getLinkedPlanServices().get(i).getPlanserviceCostShares().getObjectId();
+                redisTemplate.delete(linkedPlanServiceKey);
+                redisTemplate.delete(linkedServiceKey);
+                redisTemplate.delete(planServiceCostSharesKey);
+            }
+
+            redisTemplate.delete(planKey);
+            redisTemplate.delete(planCostSharesKey);
+            redisTemplate.delete(linkedPlanServicesKey);
+
         } else {
             throw new IllegalArgumentException("objectId: " + objectId + " not found");
         }
-
     }
 
     /**
@@ -144,27 +183,37 @@ public class PlanServiceImpl implements PlanService {
             throw new IllegalArgumentException("objectId: " + objectId + " not found");
         }
 
-        if (redisPlan.getLinkedPlanServices() != null) {
-            List<LinkedPlanService> redisLinkedPlanServices = redisPlan.getLinkedPlanServices();
-            List<LinkedPlanService> incomingLinkedPlanServices = incomingPlan.getLinkedPlanServices();
+        if (redisPlan.getLinkedPlanServices() != null && incomingPlan.getLinkedPlanServices() != null) {
+            for(int i = 0; i < incomingPlan.getLinkedPlanServices().size(); i++) {
+                String incomingLPSKey = incomingPlan.getLinkedPlanServices().get(i).getObjectType() + ":" + incomingPlan.getLinkedPlanServices().get(i).getObjectId();
+                if (Boolean.FALSE.equals(redisTemplate.hasKey(incomingPlan.getLinkedPlanServices().get(i).getObjectType() + ":" + incomingPlan.getLinkedPlanServices().get(i).getObjectId()))) {
+                    redisPlan.getLinkedPlanServices().add(incomingPlan.getLinkedPlanServices().get(i));
+                    addNewLPSToRedis(incomingPlan, i);
+                }
 
-            // Add new linkedPlanServices to the existing linkedPlanServices
-            for (LinkedPlanService incomingLinkedPlanService : incomingLinkedPlanServices) {
-                if (redisLinkedPlanServices.hashCode() != incomingLinkedPlanService.hashCode()) {
-                    redisLinkedPlanServices.add(incomingLinkedPlanService);
+                // check if hashcode is the same
+                String incomingLPSHashCode = incomingPlan.getLinkedPlanServices().get(i).hashCode() + "";
+                String redisLPSHashCode = Objects.requireNonNull(redisTemplate.opsForValue().get(incomingLPSKey)).hashCode() + "";
+                if (!incomingLPSHashCode.equals(redisLPSHashCode)) {
+                    redisPlan.getLinkedPlanServices().add(incomingPlan.getLinkedPlanServices().get(i));
+                    addNewLPSToRedis(incomingPlan, i);
                 }
             }
         }
-
-        String jsonPlan = JsonUtil.toJson(redisPlan);
-        String newEtagValue = ETagUtil.generateETag(jsonPlan);
-
-
+        String updatedPlanJson = JsonUtil.toJson(redisPlan);
         redisTemplate.opsForValue().set(planKey, redisPlan);
+
+        String newEtagValue = ETagUtil.generateETag(updatedPlanJson);
         redisTemplate.opsForValue().set(eTagKey, newEtagValue);
 
         return redisPlan;
-
     }
+
+    private void addNewLPSToRedis(Plan incomingPlan, int i) {
+        redisTemplate.opsForValue().set(incomingPlan.getLinkedPlanServices().get(i).getObjectType() + ":" + incomingPlan.getLinkedPlanServices().get(i).getObjectId(), incomingPlan.getLinkedPlanServices().get(i));
+        redisTemplate.opsForValue().set(incomingPlan.getLinkedPlanServices().get(i).getLinkedService().getObjectType() + ":" + incomingPlan.getLinkedPlanServices().get(i).getLinkedService().getObjectId(), incomingPlan.getLinkedPlanServices().get(i).getLinkedService());
+        redisTemplate.opsForValue().set(incomingPlan.getLinkedPlanServices().get(i).getPlanserviceCostShares().getObjectType() + ":" + incomingPlan.getLinkedPlanServices().get(i).getPlanserviceCostShares().getObjectId(), incomingPlan.getLinkedPlanServices().get(i).getPlanserviceCostShares());
+    }
+
 
 }

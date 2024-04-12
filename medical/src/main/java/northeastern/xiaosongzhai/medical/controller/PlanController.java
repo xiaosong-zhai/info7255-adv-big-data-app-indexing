@@ -1,10 +1,14 @@
 package northeastern.xiaosongzhai.medical.controller;
 
+import java.io.Serial;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 
 import northeastern.xiaosongzhai.medical.constant.CommonConstants;
+import northeastern.xiaosongzhai.medical.message.PlanMessage;
+import northeastern.xiaosongzhai.medical.message.PlanMessageProducer;
 import northeastern.xiaosongzhai.medical.model.Plan;
 import northeastern.xiaosongzhai.medical.service.PlanService;
 import northeastern.xiaosongzhai.medical.utils.ETagUtil;
@@ -29,6 +33,9 @@ public class PlanController {
     @Autowired
     private PlanService planService;
 
+    @Autowired
+    private PlanMessageProducer planMessageProducer;
+
     /**
      * store use case model into redis
      * @param plan use case model
@@ -40,8 +47,28 @@ public class PlanController {
         String jsonPlan = JsonUtil.toJson(plan);
         String eTagValue = ETagUtil.generateETag(jsonPlan);
 
-        // store plan into redis
-        planService.storePlan(plan, eTagValue);
+
+        PlanMessage planMessage = PlanMessage.builder()
+                .type(CommonConstants.METHOD_CREATE)
+                .plan(plan)
+                .objectId(plan.getObjectId())
+                .additionalProperties(new HashMap<String, Object>() {
+                    @Serial
+                    private static final long serialVersionUID = 2569796126586520489L;
+
+                    {
+                    put(CommonConstants.ETAG_KEY, eTagValue);
+                }})
+                .build();
+
+        // publish message to rabbitmq
+        try {
+            planMessageProducer.sendPlanMessage(planMessage);
+        } catch (Exception e) {
+            e.printStackTrace();  // 或者使用日志框架记录异常信息
+        }
+
+        // planService.storePlan(plan, eTagValue);
         // Build the response entity with status 201 Created
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
@@ -102,15 +129,23 @@ public class PlanController {
      */
     @DeleteMapping("/{objectId}")
     public ResponseEntity<Object> deleteModelById(@RequestHeader HttpHeaders headers, @PathVariable String objectId) {
-        // get eTag from client request
-        String clientETag = headers.getFirst(CommonConstants.IF_MATCH);
 
-        // if header is not present, return 428 Precondition Required
-        if (clientETag == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("If-Match header is not present");
-        }
+        PlanMessage planMessage = PlanMessage.builder()
+                .type(CommonConstants.METHOD_DELETE)
+                .objectId(objectId)
+                .build();
+//        // get eTag from client request
+//        String clientETag = headers.getFirst(CommonConstants.IF_MATCH);
+//
+//        // if header is not present, return 428 Precondition Required
+//        if (clientETag == null) {
+//            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("If-Match header is not present");
+//        }
 
-        planService.deletePlanById(objectId);
+        // publish message to rabbitmq
+        planMessageProducer.sendPlanMessage(planMessage);
+
+        // planService.deletePlanById(objectId);
         return ResponseEntity.noContent().build();
     }
 
@@ -136,12 +171,18 @@ public class PlanController {
             return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body("If-Match header does not match server eTag");
         }
 
-        // Attempt to patch the plan by id
-        Plan updatedPlan = planService.patchPlanById(objectId, plan);
+            //Attempt to patch the plan by id
+            Plan updatedPlan = planService.patchPlanById(objectId, plan);
+            if (updatedPlan == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("objectId: " + objectId + " not found");
+            }
 
-        if (updatedPlan == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("objectId: " + objectId + " not found");
-        }
+        // publish message to rabbitmq
+        planMessageProducer.sendPlanMessage(PlanMessage.builder()
+                .type(CommonConstants.METHOD_UPDATE)
+                .plan(updatedPlan)
+                .objectId(objectId)
+                .build());
 
         String afterPatchETag = planService.getETagValue(eTagKey).toString();
 

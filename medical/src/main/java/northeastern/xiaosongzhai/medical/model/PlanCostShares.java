@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import northeastern.xiaosongzhai.medical.config.StrictIntegerDeserializer;
+import org.springframework.data.elasticsearch.annotations.Field;
+import org.springframework.data.elasticsearch.annotations.FieldType;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -24,16 +26,25 @@ public class PlanCostShares implements Serializable {
     @Serial
     private static final long serialVersionUID = 6868787983378508075L;
 
+    @Field(type = FieldType.Integer)
     @NotNull
     @JsonDeserialize(using = StrictIntegerDeserializer.class)
     private Integer deductible;
+
+    @Field(type = FieldType.Keyword)
     @NotNull
     private String _org;
+
+    @Field(type = FieldType.Integer)
     @NotNull
     @JsonDeserialize(using = StrictIntegerDeserializer.class)
     private Integer copay;
+
+    @Field(type = FieldType.Keyword)
     @NotNull
     private String objectId;
+
+    @Field(type = FieldType.Keyword)
     @NotNull
     private String objectType;
 }

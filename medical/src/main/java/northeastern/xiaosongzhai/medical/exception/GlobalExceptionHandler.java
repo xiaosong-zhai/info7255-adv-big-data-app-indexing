@@ -42,4 +42,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("The requested resource does not exist");
     }
 
+    @ExceptionHandler(CustomException.class)
+    public ResponseEntity<Object> handleCustomException(CustomException ex) {
+        String errorCode = ex.getErrorCode();
+        String errorMessage = ex.getErrorMessage();
+
+        // base on the error code, return different response
+        switch (errorCode) {
+            case "REDIS_STORE_ERROR":
+                // if the error code is REDIS_STORE_ERROR
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body("Failed to store data in Redis: " + errorMessage);
+            default:
+                // if the error code is not recognized
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body("An unexpected error occurred: " + errorMessage);
+        }
+    }
+
 }
