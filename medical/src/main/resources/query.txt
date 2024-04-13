@@ -1,0 +1,151 @@
+GET index_plan/_mapping
+
+GET index_plan/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+#Simple match query
+GET index_plan/_search
+{
+  "query":{
+    "nested": {
+        "path": "linkedPlanServices.linkedService",
+        "query": {
+          "match": {
+            "linkedPlanServices.linkedService.name": "well baby"
+          }
+          
+        }
+    }
+  }
+}
+
+// just return linkedPlanServices 
+GET index_plan/_search
+{
+  "_source": ["linkedPlanServices"], 
+  "query": {
+    "nested": {
+      "path": "linkedPlanServices.linkedService",
+      "query": {
+        "match": {
+          "linkedPlanServices.linkedService.name": "well baby"
+        }
+      }
+    }
+  }
+}
+
+GET index_plan/_search
+{
+  "query": {
+    "term": {
+      "_org": {
+        "value": "example.com"
+      }
+    }
+  }
+}
+
+GET index_plan/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "term": {
+            "planType": {
+              "value": "inNetwork"
+            }
+          }
+        },
+        {
+          "range": {
+            "creationDate": {
+              "gte": "2017-12-12",
+              "lte": "2017-12-12",
+              "format": "yyyy-MM-dd"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+// return example.com size
+GET index_plan/_search
+{
+  "size": 0,
+  "aggs": {
+    "org_count": {
+      "terms": {
+        "field": "_org"
+      }
+    }
+  }
+}
+
+
+// get plan's Copay and Deductible
+GET index_plan/_search
+{
+  "_source": ["planCostShares.copay", "planCostShares.deductible"],
+  "query": {
+    "match_all": {}
+  }
+}
+
+
+
+#Range Query
+GET index_plan/_search
+{
+  "query": {
+      "nested": {
+        "path": "linkedPlanServices.planserviceCostShares",
+         "query":        
+         {"range": {
+            "linkedPlanServices.planserviceCostShares.deductible": {
+            "gte": 10
+        }
+      }}
+    }}
+}
+
+#Negative Query
+GET index_plan/_search
+{
+  "query": {
+    "bool": {
+      "must_not": [
+        {
+          "nested": {
+            "path": "linkedPlanServices.planserviceCostShares",
+             "query":        
+             {
+               "range": {
+                "linkedPlanServices.planserviceCostShares.copay": {
+                "gte": 1000
+            }
+          }}
+        }},
+        {
+          "nested": {
+            "path": "linkedPlanServices.planserviceCostShares",
+             "query":        
+             {
+               "range": {
+                "linkedPlanServices.planserviceCostShares.deductible": {
+                "gte": 1000
+            }
+          }}
+        }}
+      ]
+  }}
+}
+
+
